@@ -64,7 +64,7 @@ raulmarquez.online
 
 # VPS
 
-45.32.196.163
+Linux LTS
 
 ---
 
