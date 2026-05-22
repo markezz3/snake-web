@@ -78,6 +78,10 @@ E:\snake-web
 ├── PROJECT_CONTEXT.md
 └── .gitignore
 
+## VPS Path
+
+/var/www/snake-web 
+
 ---
 
 # Stack Planeado

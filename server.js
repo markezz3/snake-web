@@ -1,12 +1,21 @@
 const express = require("express");
-const path = require("path");
+const http = require("http");
+const { Server } = require("socket.io");
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 
-const PORT = 3000;
+app.use(express.static("public"));
 
-app.use(express.static(path.join(__dirname, "public")));
+io.on("connection", (socket) => {
+    console.log("Usuario conectado:", socket.id);
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+    socket.on("disconnect", () => {
+        console.log("Usuario desconectado:", socket.id);
+    });
+});
+
+server.listen(3000, () => {
+    console.log("Servidor corriendo en puerto 3000");
 });
