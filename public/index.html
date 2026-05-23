@@ -10,32 +10,53 @@
 </head>
 <body>
 
+    <div class="app-shell">
+        <div class="game-panel">
+            <div class="game-container">
+                <canvas id="game"></canvas>
 
-    <div class="game-container">
+                <div class="mobile-controls">
+                    <input
+                        type="text"
+                        id="username"
+                        placeholder="Username"
+                        maxlength="12"
+                    />
+                    <button id="start-button">START</button>
 
-        <canvas id="game"></canvas>
+                    <div class="control-row">
+                        <button id="up">↑</button>
 
-        <div class="mobile-controls">
-            <button id="start-button">
-                START
-            </button>
-            
-            <div class="mobile-controls">
-
-            <button id="up">↑</button>
-
-            <div class="middle-controls">
-                <button id="left">←</button>
-                <button id="down">↓</button>
-                <button id="right">→</button>
+                        <div class="middle-controls">
+                            <button id="left">←</button>
+                            <button id="down">↓</button>
+                            <button id="right">→</button>
+                        </div>
+                    </div>
+                </div>
             </div>
-
         </div>
 
+        <aside class="side-panel">
+            <div class="status-card">
+                <h2>Tu jugador</h2>
+                <p id="current-player-name">Anonymous</p>
+                <p id="current-best">Best: 0 • Anonymous</p>
+            </div>
+
+            <div class="status-card">
+                <h2>Jugadores online</h2>
+                <ul id="online-players" class="list"></ul>
+            </div>
+
+            <div class="status-card">
+                <h2>Top 10</h2>
+                <ol id="leaderboard" class="list"></ol>
+            </div>
+        </aside>
     </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>
-
-
 </body>
 </html>

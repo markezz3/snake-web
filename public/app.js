@@ -1,80 +1,148 @@
 const socket = io();
 
-socket.on("connect", () => {
-
-    console.log(
-        "Conectado al servidor:",
-        socket.id
-    );
-});
-
-socket.on("welcome", message => {
-
-    console.log(message);
-});
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-canvas.width = window.innerWidth < 700
-    ? 300
-    : 600;
+const usernameInput = document.getElementById("username");
+const currentPlayerName = document.getElementById("current-player-name");
+const currentBest = document.getElementById("current-best");
+const onlinePlayersList = document.getElementById("online-players");
+const leaderboardList = document.getElementById("leaderboard");
 
-canvas.height = canvas.width;
-
-const gridSize = canvas.width / 30;
-
+let onlinePlayers = {};
+let leaderboard = [];
 let snake;
 let food;
 let score;
-
-let highScore =
-    localStorage.getItem("highScore") || 0;
-
 let dx;
 let dy;
+let gridSize = canvas.width / 30;
 
 let gameRunning = false;
 let gameOver = false;
+let usernameSent = false;
+
+const savedUsername = localStorage.getItem("lastUsername") || "";
+const savedBest = JSON.parse(localStorage.getItem("bestRecord") || "null") || {
+    score: 0,
+    name: "Anonymous"
+};
+
+let currentUsername = savedUsername || "Anonymous";
+let bestRecord = savedBest;
+
+if (savedUsername) {
+    usernameInput.value = savedUsername;
+}
+
+currentPlayerName.textContent = currentUsername;
+renderBest();
+renderPlayers();
+renderLeaderboard();
+
+socket.on("connect", () => {
+    console.log("Conectado al servidor:", socket.id);
+});
+
+socket.on("initial-state", ({ players, leaderboard: initialLeaderboard }) => {
+    onlinePlayers = players || {};
+    leaderboard = initialLeaderboard || [];
+    renderPlayers();
+    renderLeaderboard();
+});
+
+socket.on("players-update", players => {
+    onlinePlayers = players || {};
+    renderPlayers();
+});
+
+socket.on("leaderboard-update", updatedLeaderboard => {
+    leaderboard = updatedLeaderboard || [];
+    renderLeaderboard();
+});
+
+function getCanvasSize() {
+    const availableWidth = Math.max(280, Math.min(window.innerWidth - 32, 600));
+    return availableWidth;
+}
+
+function setupCanvas() {
+    const size = getCanvasSize();
+    canvas.width = size;
+    canvas.height = size;
+    gridSize = canvas.width / 30;
+}
+
+function formatBestLabel() {
+    return `Best: ${bestRecord.score} • ${bestRecord.name}`;
+}
+
+function renderBest() {
+    currentBest.textContent = formatBestLabel();
+}
+
+function renderPlayers() {
+    const entries = Object.values(onlinePlayers)
+        .sort((a, b) => b.score - a.score)
+        .map(player => `
+            <li class="player-item">
+                <span>${player.username}</span>
+                <span class="player-score">${player.score}</span>
+            </li>
+        `)
+        .join("");
+
+    onlinePlayersList.innerHTML = entries || "<li>Sin jugadores conectados</li>";
+}
+
+function renderLeaderboard() {
+    const entries = leaderboard
+        .map(player => `
+            <li class="leaderboard-item">
+                <span>#${player.rank} ${player.username}</span>
+                <span class="leaderboard-score">${player.score}</span>
+            </li>
+        `)
+        .join("");
+
+    leaderboardList.innerHTML = entries || "<li>Sin puntajes aún</li>";
+}
+
+function saveUsername() {
+    currentUsername = usernameInput.value.trim().slice(0, 12) || "Anonymous";
+    localStorage.setItem("lastUsername", currentUsername);
+    currentPlayerName.textContent = currentUsername;
+
+    if (!usernameSent) {
+        socket.emit("new-player", currentUsername);
+        usernameSent = true;
+    }
+}
 
 function startGame() {
+    saveUsername();
 
-    snake = [
-        { x: gridSize * 5, y: gridSize * 5 }
-    ];
-
-    food = {
-        x: gridSize * 15,
-        y: gridSize * 15
-    };
-
+    snake = [{ x: gridSize * 5, y: gridSize * 5 }];
+    food = { x: gridSize * 15, y: gridSize * 15 };
     score = 0;
-
     dx = gridSize;
     dy = 0;
-
     gameRunning = true;
     gameOver = false;
 }
 
 function drawGame() {
-
-    // Fondo
     ctx.fillStyle = "black";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     drawGrid();
 
-    // Pantalla inicial
     if (!gameRunning && !gameOver) {
-
         drawCenteredText("PRESS SPACE", canvas.height / 2);
-
         return;
     }
 
-    // Pantalla game over
     if (gameOver) {
-
         drawCenteredText("GAME OVER", canvas.height / 2 - 20);
 
         ctx.fillStyle = "white";
@@ -84,17 +152,14 @@ function drawGame() {
             canvas.width / 2 - 110,
             canvas.height / 2 + 20
         );
-
         return;
     }
 
-    // Movimiento
     const head = {
         x: snake[0].x + dx,
         y: snake[0].y + dy
     };
 
-    // Colisión paredes
     if (
         head.x < 0 ||
         head.y < 0 ||
@@ -105,13 +170,8 @@ function drawGame() {
         return;
     }
 
-    // Colisión consigo mismo
     for (let i = 0; i < snake.length; i++) {
-
-        if (
-            snake[i].x === head.x &&
-            snake[i].y === head.y
-        ) {
+        if (snake[i].x === head.x && snake[i].y === head.y) {
             endGame();
             return;
         }
@@ -119,88 +179,52 @@ function drawGame() {
 
     snake.unshift(head);
 
-    const ateFood =
-        head.x === food.x &&
-        head.y === food.y;
+    const ateFood = head.x === food.x && head.y === food.y;
 
     if (!ateFood) {
-
         snake.pop();
-
     } else {
-
         score++;
 
-        if (score > highScore) {
+        if (score > bestRecord.score) {
+            bestRecord = {
+                score,
+                name: currentUsername
+            };
+            localStorage.setItem("bestRecord", JSON.stringify(bestRecord));
+            renderBest();
+        }
 
-    highScore = score;
+        socket.emit("score-update", score);
 
-    localStorage.setItem(
-        "highScore",
-        highScore
-    );
-}
-
-        food.x =
-            Math.floor(Math.random() * 30) * gridSize;
-
-        food.y =
-            Math.floor(Math.random() * 30) * gridSize;
+        food.x = Math.floor(Math.random() * 30) * gridSize;
+        food.y = Math.floor(Math.random() * 30) * gridSize;
     }
 
-    // Score
     ctx.fillStyle = "white";
-    ctx.font = "24px Arial";
-    ctx.fillText("Score: " + score, 20, 30);
+    ctx.font = canvas.width < 400 ? "16px Arial" : "24px Arial";
+    ctx.fillText("Score: " + score, 10, 25);
+    ctx.fillText(formatBestLabel(), 10, 45);
 
-    ctx.fillText(
-    "Best: " + highScore,
-    20,
-    60
-);
-
-    // Comida
     ctx.fillStyle = "#ff004c";
-
     ctx.shadowBlur = 20;
     ctx.shadowColor = "#ff004c";
+    ctx.fillRect(food.x, food.y, gridSize, gridSize);
 
-    ctx.fillRect(
-        food.x,
-        food.y,
-        gridSize,
-        gridSize
-    );
-
-    // Snake
     ctx.fillStyle = "#00ff88";
-
     ctx.shadowBlur = 15;
     ctx.shadowColor = "#00ff88";
-
     snake.forEach(segment => {
-
-        ctx.fillRect(
-            segment.x,
-            segment.y,
-            gridSize,
-            gridSize
-        );
+        ctx.fillRect(segment.x, segment.y, gridSize, gridSize);
     });
 
     ctx.shadowBlur = 0;
 }
 
 function drawGrid() {
-
     ctx.strokeStyle = "#1a1a1a";
 
-    for (
-        let i = 0;
-        i < canvas.width;
-        i += gridSize
-    ) {
-
+    for (let i = 0; i < canvas.width; i += gridSize) {
         ctx.beginPath();
         ctx.moveTo(i, 0);
         ctx.lineTo(i, canvas.height);
@@ -214,116 +238,84 @@ function drawGrid() {
 }
 
 function drawCenteredText(text, y) {
-
     ctx.fillStyle = "white";
     ctx.font = "30px Arial";
 
-    const textWidth =
-        ctx.measureText(text).width;
-
-    ctx.fillText(
-        text,
-        (canvas.width - textWidth) / 2,
-        y
-    );
+    const textWidth = ctx.measureText(text).width;
+    ctx.fillText(text, (canvas.width - textWidth) / 2, y);
 }
 
 function endGame() {
-
     gameRunning = false;
     gameOver = true;
 }
 
 document.addEventListener("keydown", event => {
-
     const key = event.key;
 
-    // START / RESTART
     if (key === " ") {
-
         if (!gameRunning) {
             startGame();
         }
-
         return;
     }
 
     if (!gameRunning) return;
 
-    // Movimiento
     if (key === "ArrowUp" && dy === 0) {
-
         dx = 0;
         dy = -gridSize;
     }
 
     if (key === "ArrowDown" && dy === 0) {
-
         dx = 0;
         dy = gridSize;
     }
 
     if (key === "ArrowLeft" && dx === 0) {
-
         dx = -gridSize;
         dy = 0;
     }
 
     if (key === "ArrowRight" && dx === 0) {
-
         dx = gridSize;
         dy = 0;
     }
 });
 
-// MOBILE CONTROLS
-
-document.getElementById("up")
-    .addEventListener("click", () => {
-
+document.getElementById("up").addEventListener("click", () => {
     if (dy === 0 && gameRunning) {
-
         dx = 0;
         dy = -gridSize;
     }
 });
 
-document.getElementById("down")
-    .addEventListener("click", () => {
-
+document.getElementById("down").addEventListener("click", () => {
     if (dy === 0 && gameRunning) {
-
         dx = 0;
         dy = gridSize;
     }
 });
 
-document.getElementById("left")
-    .addEventListener("click", () => {
-
+document.getElementById("left").addEventListener("click", () => {
     if (dx === 0 && gameRunning) {
-
         dx = -gridSize;
         dy = 0;
     }
 });
 
-document.getElementById("right")
-    .addEventListener("click", () => {
-
+document.getElementById("right").addEventListener("click", () => {
     if (dx === 0 && gameRunning) {
-
         dx = gridSize;
         dy = 0;
     }
 });
 
-document.getElementById("start-button")
-    .addEventListener("click", () => {
-
+document.getElementById("start-button").addEventListener("click", () => {
     if (!gameRunning) {
         startGame();
     }
 });
 
+setupCanvas();
 setInterval(drawGame, 100);

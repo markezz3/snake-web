@@ -160,3 +160,12 @@ El proyecto comenzará intencionalmente simple para:
 ✅ Restart
 ✅ Glow
 ✅ Grid
+✅ Snake completo
+✅ High score
+✅ Estados del juego
+✅ Glow/grid
+✅ VPS funcionando
+✅ PM2 funcionando
+✅ Nginx funcionando
+✅ Socket.IO funcionando
+✅ Cliente ↔ servidor conectado
