@@ -8,6 +8,7 @@ const currentPlayerName = document.getElementById("current-player-name");
 const currentBest = document.getElementById("current-best");
 const onlinePlayersList = document.getElementById("online-players");
 const leaderboardList = document.getElementById("leaderboard");
+const navigationKeys = new Set([" ", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
 let onlinePlayers = {};
 let leaderboard = [];
@@ -24,13 +25,12 @@ let gameOver = false;
 let usernameSent = false;
 
 const savedUsername = localStorage.getItem("lastUsername") || "";
-const savedBest = JSON.parse(localStorage.getItem("bestRecord") || "null") || {
+let bestRecord = {
     score: 0,
-    name: "Anonymous"
+    username: "Anonymous"
 };
 
 let currentUsername = savedUsername || "Anonymous";
-let bestRecord = savedBest;
 
 if (savedUsername) {
     usernameInput.value = savedUsername;
@@ -67,9 +67,10 @@ function syncRemoteSnakes(playersData) {
     });
 }
 
-socket.on("initial-state", ({ players, leaderboard: initialLeaderboard }) => {
+socket.on("initial-state", ({ players, leaderboard: initialLeaderboard, bestRecord: initialBestRecord }) => {
     onlinePlayers = players || {};
     leaderboard = initialLeaderboard || [];
+    updateBestRecord(initialBestRecord);
     syncRemoteSnakes(onlinePlayers);
 
     renderPlayers();
@@ -87,6 +88,10 @@ socket.on("leaderboard-update", updatedLeaderboard => {
     renderLeaderboard();
 });
 
+socket.on("best-update", updatedBestRecord => {
+    updateBestRecord(updatedBestRecord);
+});
+
 socket.on("snakes-update", snakes => {
     remoteSnakes = {};
 
@@ -98,13 +103,21 @@ socket.on("snakes-update", snakes => {
 });
 
 function getCanvasSize() {
-    return Math.max(280, Math.min(window.innerWidth - 32, 600));
+    const isDesktop = window.matchMedia("(min-width: 900px)").matches;
+    const widthLimit = isDesktop ? window.innerWidth - 420 : window.innerWidth - 32;
+    const heightReserve = isDesktop ? 56 : 260;
+    const heightLimit = window.innerHeight - heightReserve;
+    const maxSize = isDesktop ? 560 : 600;
+
+    return Math.max(240, Math.min(widthLimit, heightLimit, maxSize));
 }
 
 function setupCanvas() {
     const size = getCanvasSize();
     canvas.width = size;
     canvas.height = size;
+    canvas.style.width = `${size}px`;
+    canvas.style.height = `${size}px`;
     gridSize = canvas.width / 30;
 }
 
@@ -114,6 +127,19 @@ function formatBestLabel() {
 
 function getBestLabel() {
     return `Best: ${bestRecord.score} - ${bestRecord.name}`;
+}
+
+function getBestLabel() {
+    return `Best: ${bestRecord.score} - ${bestRecord.username}`;
+}
+
+function updateBestRecord(record) {
+    bestRecord = {
+        score: Number(record?.score) || 0,
+        username: String(record?.username || record?.name || "Anonymous").trim().slice(0, 12) || "Anonymous"
+    };
+
+    renderBest();
 }
 
 function renderBest() {
@@ -291,15 +317,6 @@ function drawGame() {
     } else {
         score++;
 
-        if (score > bestRecord.score) {
-            bestRecord = {
-                score,
-                name: currentUsername
-            };
-            localStorage.setItem("bestRecord", JSON.stringify(bestRecord));
-            renderBest();
-        }
-
         food = getNewFood();
     }
 
@@ -366,7 +383,15 @@ function endGame() {
 }
 
 document.addEventListener("keydown", event => {
+    if (event.target === usernameInput) {
+        return;
+    }
+
     const key = event.key;
+
+    if (navigationKeys.has(key)) {
+        event.preventDefault();
+    }
 
     if (key === " ") {
         if (!gameRunning) {

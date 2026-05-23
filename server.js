@@ -1,5 +1,7 @@
 const express = require("express");
+const fs = require("fs");
 const http = require("http");
+const path = require("path");
 const { Server } = require("socket.io");
 
 const app = express();
@@ -9,6 +11,70 @@ const io = new Server(server);
 app.use(express.static("public"));
 
 const players = {};
+const recordsPath = path.join(__dirname, "data", "records.json");
+let records = loadRecords();
+
+function loadRecords() {
+    try {
+        const rawRecords = fs.readFileSync(recordsPath, "utf8");
+        const parsedRecords = JSON.parse(rawRecords);
+
+        return {
+            bestRecord: normalizeRecord(parsedRecords.bestRecord),
+            leaderboard: normalizeLeaderboard(parsedRecords.leaderboard)
+        };
+    } catch (error) {
+        return {
+            bestRecord: normalizeRecord(),
+            leaderboard: []
+        };
+    }
+}
+
+function saveRecords() {
+    fs.mkdirSync(path.dirname(recordsPath), { recursive: true });
+    fs.writeFileSync(recordsPath, JSON.stringify(records, null, 2));
+}
+
+function normalizeRecord(record = {}) {
+    return {
+        username: String(record.username || record.name || "Anonymous").trim().slice(0, 12) || "Anonymous",
+        score: Number(record.score) || 0
+    };
+}
+
+function normalizeLeaderboard(leaderboard = []) {
+    return leaderboard
+        .map(normalizeRecord)
+        .filter(record => record.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+}
+
+function registerScore(username, score) {
+    const safeRecord = normalizeRecord({ username, score });
+
+    if (safeRecord.score <= 0) {
+        return false;
+    }
+
+    const existingIndex = records.leaderboard.findIndex(record => record.username === safeRecord.username);
+
+    if (existingIndex >= 0 && records.leaderboard[existingIndex].score >= safeRecord.score) {
+        return false;
+    }
+
+    if (existingIndex >= 0) {
+        records.leaderboard[existingIndex] = safeRecord;
+    } else {
+        records.leaderboard.push(safeRecord);
+    }
+
+    records.leaderboard = normalizeLeaderboard(records.leaderboard);
+    records.bestRecord = records.leaderboard[0] || normalizeRecord();
+    saveRecords();
+    return true;
+}
 
 function createPlayer(socketId, username = "Anonymous") {
     return {
@@ -43,21 +109,22 @@ function getSnakes() {
 }
 
 function getLeaderboard() {
-    return Object.values(players)
-        .filter(player => Number(player.score) > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 10)
-        .map((player, index) => ({
+    return records.leaderboard
+        .map((record, index) => ({
             rank: index + 1,
-            id: player.id,
-            username: player.username,
-            score: player.score
+            username: record.username,
+            score: record.score
         }));
+}
+
+function getBestRecord() {
+    return records.bestRecord;
 }
 
 function broadcastState() {
     io.emit("players-update", players);
     io.emit("leaderboard-update", getLeaderboard());
+    io.emit("best-update", getBestRecord());
     io.emit("snakes-update", getSnakes());
 }
 
@@ -69,6 +136,7 @@ io.on("connection", (socket) => {
     socket.emit("initial-state", {
         players,
         leaderboard: getLeaderboard(),
+        bestRecord: getBestRecord(),
         snakes: getSnakes()
     });
 
@@ -98,6 +166,7 @@ io.on("connection", (socket) => {
 
         if (score !== undefined && score !== null) {
             players[socket.id].score = Number(score) || 0;
+            registerScore(players[socket.id].username, players[socket.id].score);
         }
 
         broadcastState();
@@ -111,6 +180,7 @@ io.on("connection", (socket) => {
         }
 
         players[socket.id].score = safeScore;
+        registerScore(players[socket.id].username, safeScore);
         broadcastState();
     });
 
