@@ -10,6 +10,15 @@ app.use(express.static("public"));
 
 const players = {};
 
+function createPlayer(socketId, username = "Anonymous") {
+    return {
+        id: socketId,
+        username,
+        score: 0,
+        snake: []
+    };
+}
+
 function sanitizeSnake(snake) {
     if (!Array.isArray(snake)) {
         return [];
@@ -55,11 +64,15 @@ function broadcastState() {
 io.on("connection", (socket) => {
     console.log("Usuario conectado:", socket.id);
 
+    players[socket.id] = createPlayer(socket.id);
+
     socket.emit("initial-state", {
         players,
         leaderboard: getLeaderboard(),
         snakes: getSnakes()
     });
+
+    broadcastState();
 
     socket.on("new-player", username => {
         const safeUsername = String(username || "Anonymous").trim().slice(0, 12) || "Anonymous";
@@ -78,12 +91,7 @@ io.on("connection", (socket) => {
 
     socket.on("snake-state", ({ snake, score }) => {
         if (!players[socket.id]) {
-            players[socket.id] = {
-                id: socket.id,
-                username: "Anonymous",
-                score: 0,
-                snake: []
-            };
+            players[socket.id] = createPlayer(socket.id);
         }
 
         players[socket.id].snake = sanitizeSnake(snake);
@@ -99,12 +107,7 @@ io.on("connection", (socket) => {
         const safeScore = Number(score) || 0;
 
         if (!players[socket.id]) {
-            players[socket.id] = {
-                id: socket.id,
-                username: "Anonymous",
-                score: 0,
-                snake: []
-            };
+            players[socket.id] = createPlayer(socket.id);
         }
 
         players[socket.id].score = safeScore;

@@ -43,18 +43,34 @@ renderLeaderboard();
 
 socket.on("connect", () => {
     console.log("Conectado al servidor:", socket.id);
+    sendPlayerName();
 });
 
-socket.on("initial-state", ({ players, leaderboard: initialLeaderboard, snakes }) => {
-    onlinePlayers = players || {};
-    leaderboard = initialLeaderboard || [];
+function syncRemoteSnakes(playersData) {
     remoteSnakes = {};
 
-    (snakes || []).forEach(player => {
-        if (player.id !== socket.id) {
-            remoteSnakes[player.id] = player;
+    Object.entries(playersData || {}).forEach(([playerId, player]) => {
+        if (playerId === socket.id) {
+            return;
         }
+
+        if (!player) {
+            return;
+        }
+
+        remoteSnakes[playerId] = {
+            id: player.id || playerId,
+            username: player.username,
+            score: player.score || 0,
+            snake: Array.isArray(player.snake) ? player.snake : []
+        };
     });
+}
+
+socket.on("initial-state", ({ players, leaderboard: initialLeaderboard }) => {
+    onlinePlayers = players || {};
+    leaderboard = initialLeaderboard || [];
+    syncRemoteSnakes(onlinePlayers);
 
     renderPlayers();
     renderLeaderboard();
@@ -62,6 +78,7 @@ socket.on("initial-state", ({ players, leaderboard: initialLeaderboard, snakes }
 
 socket.on("players-update", players => {
     onlinePlayers = players || {};
+    syncRemoteSnakes(onlinePlayers);
     renderPlayers();
 });
 
@@ -95,8 +112,12 @@ function formatBestLabel() {
     return `Best: ${bestRecord.score} • ${bestRecord.name}`;
 }
 
+function getBestLabel() {
+    return `Best: ${bestRecord.score} - ${bestRecord.name}`;
+}
+
 function renderBest() {
-    currentBest.textContent = formatBestLabel();
+    currentBest.textContent = getBestLabel();
 }
 
 function renderPlayers() {
@@ -104,8 +125,8 @@ function renderPlayers() {
         .sort((a, b) => b.score - a.score)
         .map(player => `
             <li class="player-item">
-                <span>${player.username}</span>
-                <span class="player-score">${player.score}</span>
+                <span>${escapeHtml(player.username || "Anonymous")}</span>
+                <span class="player-score">${Number(player.score) || 0}</span>
             </li>
         `)
         .join("");
@@ -117,8 +138,8 @@ function renderLeaderboard() {
     const entries = leaderboard
         .map(player => `
             <li class="leaderboard-item">
-                <span>#${player.rank} ${player.username}</span>
-                <span class="leaderboard-score">${player.score}</span>
+                <span>#${player.rank} ${escapeHtml(player.username || "Anonymous")}</span>
+                <span class="leaderboard-score">${Number(player.score) || 0}</span>
             </li>
         `)
         .join("");
@@ -126,15 +147,30 @@ function renderLeaderboard() {
     leaderboardList.innerHTML = entries || "<li>Sin puntajes aún</li>";
 }
 
-function saveUsername() {
+function escapeHtml(value) {
+    return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+}
+
+function readUsername() {
     currentUsername = usernameInput.value.trim().slice(0, 12) || "Anonymous";
     localStorage.setItem("lastUsername", currentUsername);
     currentPlayerName.textContent = currentUsername;
+    return currentUsername;
+}
 
-    if (!usernameSent) {
-        socket.emit("new-player", currentUsername);
-        usernameSent = true;
-    }
+function sendPlayerName() {
+    const name = readUsername();
+    socket.emit("new-player", name);
+    usernameSent = true;
+}
+
+function saveUsername() {
+    sendPlayerName();
 }
 
 function isCellOnSnake(cell, body) {
@@ -176,6 +212,10 @@ function drawSnake(body, color, label) {
 }
 
 function sendSnakeState() {
+    if (!socket.connected) {
+        return;
+    }
+
     socket.emit("snake-state", {
         snake: snake.map(segment => ({ x: segment.x, y: segment.y })),
         score
@@ -203,11 +243,13 @@ function drawGame() {
     drawGrid();
 
     if (!gameRunning && !gameOver) {
+        drawRemoteSnakes();
         drawCenteredText("PRESS SPACE", canvas.height / 2);
         return;
     }
 
     if (gameOver) {
+        drawRemoteSnakes();
         drawCenteredText("GAME OVER", canvas.height / 2 - 20);
 
         ctx.fillStyle = "white";
@@ -261,13 +303,15 @@ function drawGame() {
         food = getNewFood();
     }
 
-    socket.emit("score-update", score);
+    if (socket.connected) {
+        socket.emit("score-update", score);
+    }
     sendSnakeState();
 
     ctx.fillStyle = "white";
     ctx.font = canvas.width < 400 ? "16px Arial" : "24px Arial";
     ctx.fillText("Score: " + score, 10, 25);
-    ctx.fillText(formatBestLabel(), 10, 45);
+    ctx.fillText(getBestLabel(), 10, 45);
 
     ctx.fillStyle = "#ff004c";
     ctx.shadowBlur = 20;
@@ -275,14 +319,21 @@ function drawGame() {
     ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize, gridSize);
 
     drawSnake(snake, "#00ff88", currentUsername);
+    drawRemoteSnakes();
 
+    ctx.shadowBlur = 0;
+}
+
+function drawRemoteSnakes() {
     Object.values(remoteSnakes).forEach(player => {
+        if (!player || player.id === socket.id) {
+            return;
+        }
+
         if (Array.isArray(player.snake) && player.snake.length > 0) {
             drawSnake(player.snake, "#4cc9f0", player.username);
         }
     });
-
-    ctx.shadowBlur = 0;
 }
 
 function drawGrid() {
