@@ -11,11 +11,12 @@ const leaderboardList = document.getElementById("leaderboard");
 
 let onlinePlayers = {};
 let leaderboard = [];
-let snake;
-let food;
-let score;
-let dx;
-let dy;
+let remoteSnakes = {};
+let snake = [];
+let food = { x: 15, y: 15 };
+let score = 0;
+let dx = 1;
+let dy = 0;
 let gridSize = canvas.width / 30;
 
 let gameRunning = false;
@@ -44,9 +45,17 @@ socket.on("connect", () => {
     console.log("Conectado al servidor:", socket.id);
 });
 
-socket.on("initial-state", ({ players, leaderboard: initialLeaderboard }) => {
+socket.on("initial-state", ({ players, leaderboard: initialLeaderboard, snakes }) => {
     onlinePlayers = players || {};
     leaderboard = initialLeaderboard || [];
+    remoteSnakes = {};
+
+    (snakes || []).forEach(player => {
+        if (player.id !== socket.id) {
+            remoteSnakes[player.id] = player;
+        }
+    });
+
     renderPlayers();
     renderLeaderboard();
 });
@@ -61,9 +70,18 @@ socket.on("leaderboard-update", updatedLeaderboard => {
     renderLeaderboard();
 });
 
+socket.on("snakes-update", snakes => {
+    remoteSnakes = {};
+
+    (snakes || []).forEach(player => {
+        if (player.id !== socket.id) {
+            remoteSnakes[player.id] = player;
+        }
+    });
+});
+
 function getCanvasSize() {
-    const availableWidth = Math.max(280, Math.min(window.innerWidth - 32, 600));
-    return availableWidth;
+    return Math.max(280, Math.min(window.innerWidth - 32, 600));
 }
 
 function setupCanvas() {
@@ -119,16 +137,63 @@ function saveUsername() {
     }
 }
 
+function isCellOnSnake(cell, body) {
+    return body.some(segment => segment.x === cell.x && segment.y === cell.y);
+}
+
+function getNewFood() {
+    let nextFood = {
+        x: Math.floor(Math.random() * 30),
+        y: Math.floor(Math.random() * 30)
+    };
+
+    while (isCellOnSnake(nextFood, snake)) {
+        nextFood = {
+            x: Math.floor(Math.random() * 30),
+            y: Math.floor(Math.random() * 30)
+        };
+    }
+
+    return nextFood;
+}
+
+function drawSnake(body, color, label) {
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = color;
+
+    body.forEach(segment => {
+        ctx.fillRect(segment.x * gridSize, segment.y * gridSize, gridSize, gridSize);
+    });
+
+    ctx.shadowBlur = 0;
+
+    if (label) {
+        ctx.fillStyle = "white";
+        ctx.font = canvas.width < 400 ? "12px Arial" : "14px Arial";
+        ctx.fillText(label, body[0].x * gridSize + 4, body[0].y * gridSize - 4);
+    }
+}
+
+function sendSnakeState() {
+    socket.emit("snake-state", {
+        snake: snake.map(segment => ({ x: segment.x, y: segment.y })),
+        score
+    });
+}
+
 function startGame() {
     saveUsername();
 
-    snake = [{ x: gridSize * 5, y: gridSize * 5 }];
-    food = { x: gridSize * 15, y: gridSize * 15 };
+    snake = [{ x: 5, y: 5 }];
+    food = getNewFood();
     score = 0;
-    dx = gridSize;
+    dx = 1;
     dy = 0;
     gameRunning = true;
     gameOver = false;
+
+    sendSnakeState();
 }
 
 function drawGame() {
@@ -163,18 +228,16 @@ function drawGame() {
     if (
         head.x < 0 ||
         head.y < 0 ||
-        head.x >= canvas.width ||
-        head.y >= canvas.height
+        head.x >= 30 ||
+        head.y >= 30
     ) {
         endGame();
         return;
     }
 
-    for (let i = 0; i < snake.length; i++) {
-        if (snake[i].x === head.x && snake[i].y === head.y) {
-            endGame();
-            return;
-        }
+    if (isCellOnSnake(head, snake)) {
+        endGame();
+        return;
     }
 
     snake.unshift(head);
@@ -195,11 +258,11 @@ function drawGame() {
             renderBest();
         }
 
-        socket.emit("score-update", score);
-
-        food.x = Math.floor(Math.random() * 30) * gridSize;
-        food.y = Math.floor(Math.random() * 30) * gridSize;
+        food = getNewFood();
     }
+
+    socket.emit("score-update", score);
+    sendSnakeState();
 
     ctx.fillStyle = "white";
     ctx.font = canvas.width < 400 ? "16px Arial" : "24px Arial";
@@ -209,13 +272,14 @@ function drawGame() {
     ctx.fillStyle = "#ff004c";
     ctx.shadowBlur = 20;
     ctx.shadowColor = "#ff004c";
-    ctx.fillRect(food.x, food.y, gridSize, gridSize);
+    ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize, gridSize);
 
-    ctx.fillStyle = "#00ff88";
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = "#00ff88";
-    snake.forEach(segment => {
-        ctx.fillRect(segment.x, segment.y, gridSize, gridSize);
+    drawSnake(snake, "#00ff88", currentUsername);
+
+    Object.values(remoteSnakes).forEach(player => {
+        if (Array.isArray(player.snake) && player.snake.length > 0) {
+            drawSnake(player.snake, "#4cc9f0", player.username);
+        }
     });
 
     ctx.shadowBlur = 0;
@@ -264,21 +328,21 @@ document.addEventListener("keydown", event => {
 
     if (key === "ArrowUp" && dy === 0) {
         dx = 0;
-        dy = -gridSize;
+        dy = -1;
     }
 
     if (key === "ArrowDown" && dy === 0) {
         dx = 0;
-        dy = gridSize;
+        dy = 1;
     }
 
     if (key === "ArrowLeft" && dx === 0) {
-        dx = -gridSize;
+        dx = -1;
         dy = 0;
     }
 
     if (key === "ArrowRight" && dx === 0) {
-        dx = gridSize;
+        dx = 1;
         dy = 0;
     }
 });
@@ -286,27 +350,27 @@ document.addEventListener("keydown", event => {
 document.getElementById("up").addEventListener("click", () => {
     if (dy === 0 && gameRunning) {
         dx = 0;
-        dy = -gridSize;
+        dy = -1;
     }
 });
 
 document.getElementById("down").addEventListener("click", () => {
     if (dy === 0 && gameRunning) {
         dx = 0;
-        dy = gridSize;
+        dy = 1;
     }
 });
 
 document.getElementById("left").addEventListener("click", () => {
     if (dx === 0 && gameRunning) {
-        dx = -gridSize;
+        dx = -1;
         dy = 0;
     }
 });
 
 document.getElementById("right").addEventListener("click", () => {
     if (dx === 0 && gameRunning) {
-        dx = gridSize;
+        dx = 1;
         dy = 0;
     }
 });
@@ -317,5 +381,6 @@ document.getElementById("start-button").addEventListener("click", () => {
     }
 });
 
+window.addEventListener("resize", setupCanvas);
 setupCanvas();
 setInterval(drawGame, 100);
