@@ -1,3 +1,17 @@
+const socket = io();
+
+socket.on("connect", () => {
+
+    console.log(
+        "Conectado al servidor:",
+        socket.id
+    );
+});
+
+socket.on("welcome", message => {
+
+    console.log(message);
+});
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
@@ -12,6 +26,9 @@ const gridSize = canvas.width / 30;
 let snake;
 let food;
 let score;
+
+let highScore =
+    localStorage.getItem("highScore") || 0;
 
 let dx;
 let dy;
@@ -114,6 +131,16 @@ function drawGame() {
 
         score++;
 
+        if (score > highScore) {
+
+    highScore = score;
+
+    localStorage.setItem(
+        "highScore",
+        highScore
+    );
+}
+
         food.x =
             Math.floor(Math.random() * 30) * gridSize;
 
@@ -125,6 +152,12 @@ function drawGame() {
     ctx.fillStyle = "white";
     ctx.font = "24px Arial";
     ctx.fillText("Score: " + score, 20, 30);
+
+    ctx.fillText(
+    "Best: " + highScore,
+    20,
+    60
+);
 
     // Comida
     ctx.fillStyle = "#ff004c";

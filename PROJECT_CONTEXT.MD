@@ -149,3 +149,14 @@ El proyecto comenzará intencionalmente simple para:
 - El puerto 3000 estaba bloqueado por firewall
 - server.js estaba dentro de /public
 - PM2 ya ejecutaba startup automáticamente
+
+## 22 Mayo 2026
+
+✅ Gameplay
+✅ Responsive
+✅ Mobile controls
+✅ Start screen
+✅ Game over
+✅ Restart
+✅ Glow
+✅ Grid
