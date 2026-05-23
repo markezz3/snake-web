@@ -285,4 +285,12 @@ document.getElementById("right")
     }
 });
 
+document.getElementById("start-button")
+    .addEventListener("click", () => {
+
+    if (!gameRunning) {
+        startGame();
+    }
+});
+
 setInterval(drawGame, 100);

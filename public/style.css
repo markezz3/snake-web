@@ -60,3 +60,11 @@ button {
 button:active {
     background: #666;
 }
+#start-button {
+    width: 200px;
+    height: 60px;
+
+    font-size: 24px;
+
+    background: #00aa66;
+}
